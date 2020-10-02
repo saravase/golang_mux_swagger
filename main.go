@@ -4,8 +4,10 @@ import (
 	"context"
 	"os/signal"
 
+	"github.com/go-openapi/runtime/middleware"
 	"github.com/gorilla/mux"
 
+	"github.com/saravase/golang_mux_swagger/plant-api/data"
 	"github.com/saravase/golang_mux_swagger/plant-api/handlers"
 
 	"log"
@@ -19,8 +21,11 @@ func main() {
 	// New creates a new plant-api Logger.
 	logger := log.New(os.Stdout, "product-plant-api", log.LstdFlags)
 
+	// Initialize the Validation struct properties
+	validation := data.NewValidation()
+
 	// Initialize the plant struct properties
-	plantHandler := handlers.NewPlant(logger)
+	plantHandler := handlers.NewPlant(logger, validation)
 
 	// NewRouter returns a new gorilla mux router instance
 	gorillaMux := mux.NewRouter()
@@ -33,10 +38,11 @@ func main() {
 	// Get subrouter
 	getRouter := gorillaMux.Methods(http.MethodGet).Subrouter()
 	getRouter.HandleFunc("/plant", plantHandler.GetPlants)
+	getRouter.HandleFunc("/plant/{id:[0-9]+}", plantHandler.GetPlant)
 
 	// Post subrouter
 	postRouter := gorillaMux.Methods(http.MethodPost).Subrouter()
-	postRouter.HandleFunc("/plant", plantHandler.CreatePlant)
+	postRouter.HandleFunc("/plant", plantHandler.AddPlant)
 	postRouter.Use(plantHandler.PlantValidationMiddleware)
 
 	// Put subrouter
@@ -47,6 +53,17 @@ func main() {
 	// Delete subrouter
 	deleteRouter := gorillaMux.Methods(http.MethodDelete).Subrouter()
 	deleteRouter.HandleFunc("/plant/{id:[0-9]+}", plantHandler.DeletePlant)
+
+	reDocOptions := middleware.RedocOpts{
+		SpecURL: "/swagger.yaml",
+	}
+	swaggerMiddleware := middleware.Redoc(reDocOptions, nil)
+
+	// Swagger docs API
+	getRouter.Handle("/docs", swaggerMiddleware)
+
+	// Download swagger.yaml file
+	getRouter.Handle("/swagger.yaml", http.FileServer(http.Dir("./")))
 
 	// Initialize the plant-api server properties
 	server := http.Server{
@@ -66,6 +83,7 @@ func main() {
 		if listenAndServeError != nil {
 			logger.Fatal(listenAndServeError)
 		}
+		logger.Printf("Server running on port %s\n", server.Addr)
 	}()
 
 	// Make the channel with type os.Signal
